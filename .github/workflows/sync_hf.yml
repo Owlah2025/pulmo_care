@@ -21,4 +21,4 @@ jobs:
           git config --global user.name "HF Sync Bot"
           
           # This command extracts the 'backend' folder into a temporary branch and pushes it
-          git subtree push --prefix backend https://Owlah2025:$HF_TOKEN@huggingface.co/spaces/Owlah2025/pulmo-backend main
+          git subtree push --prefix backend https://AhmedHazem23:$HF_TOKEN@huggingface.co/spaces/AhmedHazem23/pulmo_backend main
