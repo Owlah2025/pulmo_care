@@ -1,11 +1,11 @@
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { Wind, Activity, ChevronRight, Upload, FileText, Clock, Heart, TrendingDown } from 'lucide-react';
+import { Wind, Activity, ChevronRight, Upload, Clock, TrendingDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { 
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine 
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer 
 } from 'recharts';
-import { apiService, type GameState, type DailyVital, type RiskPrediction, type BreathingSession, type RehabPlan, type PFTResult } from '../../services/api';
+import { apiService, type GameState, type DailyVital, type BreathingSession, type PFTResult } from '../../services/api';
 
 interface PatientContext {
   patientId: string;
@@ -33,10 +33,7 @@ export default function PatientHome() {
   const [vitals, setVitals] = useState<DailyVital[]>([]);
   const [pft, setPft] = useState<PFTResult[]>([]);
   const [sessions, setSessions] = useState<BreathingSession[]>([]);
-  const [riskPred, setRiskPred] = useState<RiskPrediction | null>(null);
-  const [rehabPlan, setRehabPlan] = useState<RehabPlan | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     try {
@@ -57,20 +54,8 @@ export default function PatientHome() {
 
       const gameRes = await apiService.getGameState(patientId, sessionsLast7Days);
       setGameState(gameRes.data);
-
-      try {
-        const predRes = await apiService.getLatestPrediction(patientId);
-        setRiskPred(predRes.data);
-      } catch { /* no prediction yet */ }
-
-      try {
-        const planRes = await apiService.getRehabPlan(patientId);
-        setRehabPlan(planRes.data);
-      } catch { /* no plan yet */ }
     } catch (e) {
       console.error('PatientHome load error:', e);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -113,7 +98,6 @@ export default function PatientHome() {
     return { date: dayStr, good_pct: sessForDay.length > 0 ? sessForDay[0].good_breath_pct : 0 };
   });
 
-  const latestVital = vitals[vitals.length - 1];
   const treeStateKey = gameState?.tree_state ?? 'dormant';
   const tree = TREE_STATES[treeStateKey] ?? TREE_STATES.dormant;
   const sessThisWeek = treeStateKey === 'lush' ? 7 : treeStateKey === 'healthy' ? 5 : treeStateKey === 'wilting' ? 3 : treeStateKey === 'stressed' ? 1 : 0;
