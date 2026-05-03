@@ -1,8 +1,0 @@
-{
-  "github": {
-    "silent": true
-  },
-  "installCommand": "npm install",
-  "buildCommand": "npm run build",
-  "ignore_build_errors": false
-}
