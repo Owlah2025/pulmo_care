@@ -21,7 +21,6 @@ export default function BreathingSession() {
   const [verdict,   setVerdict]   = useState<Verdict>('Idle');
   const [elapsed,   setElapsed]   = useState(0);
   const [ready,     setReady]     = useState(false);
-  const [initErr,   setInitErr]   = useState('');
   const [saved,     setSaved]     = useState(false);
   const [showHist,  setShowHist]  = useState(false);
   const [history,   setHistory]   = useState<any[]>([]);
@@ -96,7 +95,6 @@ export default function BreathingSession() {
         if (!dead) { setReady(true); setStatus('Ready'); }
       } catch (e: any) {
         console.error('BreathingSession Init Error:', e);
-        if (!dead) setInitErr(e instanceof Error ? e.message : JSON.stringify(e) || 'Unknown Init Error');
       }
     })();
     return () => { dead = true; poseRef.current?.close(); };
