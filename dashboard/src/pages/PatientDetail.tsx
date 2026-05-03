@@ -324,6 +324,49 @@ export default function PatientDetail() {
           </div>
         </div>
       </div>
+
+      {/* Detailed Session History */}
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-header">
+          <div className="card-title">Detailed Session History</div>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Date & Time</th>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Exercise</th>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Breaths</th>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Accuracy</th>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Avg Depth</th>
+                <th style={{ padding: '12px 8px', color: 'var(--text-muted)', fontWeight: 500 }}>Avg BPM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No sessions recorded yet.</td>
+                </tr>
+              ) : (
+                sessions.map(s => (
+                  <tr key={s.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                    <td style={{ padding: '12px 8px' }}>{new Date(s.started_at).toLocaleString()}</td>
+                    <td style={{ padding: '12px 8px', textTransform: 'capitalize' }}>{s.exercise_type.replace('_', ' ')}</td>
+                    <td style={{ padding: '12px 8px' }}>{s.total_breaths}</td>
+                    <td style={{ padding: '12px 8px' }}>
+                      <span style={{ color: (s.good_breath_pct ?? 0) >= 75 ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                        {Math.round(s.good_breath_pct ?? 0)}%
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px' }}>{Math.round((s.avg_depth_score ?? 0) * 100)}%</td>
+                    <td style={{ padding: '12px 8px' }}>{Math.round(s.avg_bpm ?? 0)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

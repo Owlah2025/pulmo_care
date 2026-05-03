@@ -1,7 +1,7 @@
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { Wind, Activity, ChevronRight } from 'lucide-react';
+import { Wind, Activity, ChevronRight, Upload, FileText, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { apiService, type GameState, type DailyVital, type RiskPrediction } from '../../services/api';
+import { apiService, type GameState, type DailyVital, type RiskPrediction, type BreathingSession, type RehabPlan } from '../../services/api';
 
 interface PatientContext {
   patientId: string;
@@ -24,58 +24,115 @@ export default function PatientHome() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [latestVital, setLatestVital] = useState<DailyVital | null>(null);
   const [riskPred, setRiskPred] = useState<RiskPrediction | null>(null);
+  const [sessions, setSessions] = useState<BreathingSession[]>([]);
+  const [rehabPlan, setRehabPlan] = useState<RehabPlan | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const load = async () => {
+  const loadData = async () => {
+    try {
+      const vitalsRes = await apiService.getPatientVitals(patientId, 1);
+      const allVitals = vitalsRes.data;
+      setLatestVital(allVitals[allVitals.length - 1] ?? null);
+
+      const sessRes = await apiService.getPatientSessions(patientId);
+      setSessions(sessRes.data);
+      
+      const now = Date.now();
+      const sessionsLast7Days = sessRes.data.filter(
+        s => now - new Date(s.started_at).getTime() < 7 * 24 * 3600 * 1000
+      ).length;
+
+      const gameRes = await apiService.getGameState(patientId, sessionsLast7Days);
+      setGameState(gameRes.data);
+
       try {
-        const vitalsRes = await apiService.getPatientVitals(patientId, 1);
-        const allVitals = vitalsRes.data;
-        setLatestVital(allVitals[allVitals.length - 1] ?? null);
+        const predRes = await apiService.getLatestPrediction(patientId);
+        setRiskPred(predRes.data);
+      } catch { /* no prediction yet */ }
 
-        // Count sessions in last 7 days to determine tree state
-        const sessRes = await apiService.getPatientSessions(patientId);
-        const now = Date.now();
-        const sessionsLast7Days = sessRes.data.filter(
-          s => now - new Date(s.started_at).getTime() < 7 * 24 * 3600 * 1000
-        ).length;
+      try {
+        const planRes = await apiService.getRehabPlan(patientId);
+        setRehabPlan(planRes.data);
+      } catch { /* no plan yet */ }
+    } catch (e) {
+      console.error('PatientHome load error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        const gameRes = await apiService.getGameState(patientId, sessionsLast7Days);
-        setGameState(gameRes.data);
+  useEffect(() => { loadData(); }, [patientId]);
 
-        // Real risk prediction
-        try {
-          const predRes = await apiService.getLatestPrediction(patientId);
-          setRiskPred(predRes.data);
-        } catch { /* no prediction yet */ }
-      } catch (e) {
-        console.error('PatientHome load error:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [patientId]);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !patientId) return;
+
+    setUploading(true);
+    try {
+      await apiService.uploadReport(patientId, file);
+      alert('Report uploaded successfully! Your care team will be notified.');
+      loadData();
+    } catch (err) {
+      alert('Failed to upload report. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const treeStateKey = gameState?.tree_state ?? 'dormant';
   const tree = TREE_STATES[treeStateKey] ?? TREE_STATES.dormant;
   const streak = gameState?.current_streak_days ?? 0;
   const badge = streak >= 90 ? '🥇' : streak >= 30 ? '🥈' : streak >= 7 ? '🥉' : null;
 
-  // Approximate sessions this week from tree state
   const sessThisWeek = treeStateKey === 'lush' ? 7 : treeStateKey === 'healthy' ? 5 : treeStateKey === 'wilting' ? 3 : treeStateKey === 'stressed' ? 1 : 0;
 
   return (
     <div>
-      {/* Greeting */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.4px' }}>
-          Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {firstName} 👋
+      {/* Greeting + Action */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.4px' }}>
+            Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {firstName} 👋
+          </div>
+          <div style={{ fontSize: 13, color: '#8892a4', marginTop: 4 }}>
+            You have a session scheduled today
+          </div>
         </div>
-        <div style={{ fontSize: 13, color: '#8892a4', marginTop: 4 }}>
-          You have a session scheduled today
-        </div>
+        <label style={{ 
+          background: 'rgba(59,130,246,0.1)', color: '#3b82f6', 
+          padding: '8px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          border: '1px solid rgba(59,130,246,0.2)'
+        }}>
+          <Upload size={14} />
+          {uploading ? 'Uploading...' : 'Upload PFT'}
+          <input type="file" hidden onChange={handleFileUpload} accept=".pdf,image/*" disabled={uploading} />
+        </label>
       </div>
+
+      {/* Rehab Plan Banner */}
+      {rehabPlan && (
+        <div style={{ 
+          background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(16,185,129,0.08))', 
+          border: '1px solid rgba(59,130,246,0.2)', borderRadius: 16, padding: 16, marginBottom: 20 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <FileText color="#3b82f6" size={18} />
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Your Personalized Plan</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: '#8892a4', textTransform: 'uppercase' }}>Frequency</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{rehabPlan.session_frequency_daily}x daily</div>
+            </div>
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10 }}>
+              <div style={{ fontSize: 10, color: '#8892a4', textTransform: 'uppercase' }}>Intensity</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{rehabPlan.intensity_level}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Respiratory Tree */}
       <div className="tree-card">
@@ -83,7 +140,6 @@ export default function PatientHome() {
         <div className="tree-label" style={{ color: tree.color }}>{tree.label}</div>
         <div className="tree-tagline">{tree.tagline}</div>
 
-        {/* Weekly progress dots */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 14 }}>
           {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => (
             <div key={d} style={{ textAlign: 'center' }}>
@@ -100,7 +156,6 @@ export default function PatientHome() {
         </div>
       </div>
 
-      {/* Streak + Badge */}
       <div className="streak-row">
         <div className="streak-badge">
           <div className="streak-icon">🔥</div>
@@ -123,7 +178,6 @@ export default function PatientHome() {
         </div>
       </div>
 
-      {/* CTA */}
       <button className="start-session-btn" onClick={() => navigate('/patient/session')}>
         <Wind size={20} />
         Start Breathing Session
@@ -171,7 +225,51 @@ export default function PatientHome() {
         </div>
       </div>
 
-      {/* Quick vitals */}
+      {/* Session History */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div className="section-title" style={{ marginBottom: 0 }}>Recent Sessions</div>
+        <button 
+          onClick={() => navigate('/patient/history')}
+          style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+        >
+          View All
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+        {sessions.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 14, color: '#8892a4', fontSize: 13 }}>
+            No sessions completed yet.
+          </div>
+        ) : (
+          sessions.slice(0, 3).map(s => (
+            <div key={s.id} style={{ 
+              background: 'rgba(255,255,255,0.02)', borderRadius: 14, padding: 12,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              border: '1px solid rgba(255,255,255,0.05)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ 
+                  width: 36, height: 36, borderRadius: 10, background: 'rgba(16,185,129,0.1)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981'
+                }}>
+                  <Clock size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.exercise_type === 'diaphragmatic' ? 'Diaphragmatic' : 'Pursed Lip'}</div>
+                  <div style={{ fontSize: 11, color: '#8892a4' }}>{new Date(s.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: (s.good_breath_pct ?? 0) >= 80 ? '#10b981' : '#f59e0b' }}>
+                  {Math.round(s.good_breath_pct ?? 0)}%
+                </div>
+                <div style={{ fontSize: 10, color: '#8892a4' }}>Accuracy</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
       <div className="section-title">Latest Vitals</div>
       <div className="vitals-quick-grid">
         <div className="vital-quick-card">
@@ -204,7 +302,6 @@ export default function PatientHome() {
         </div>
       </div>
 
-      {/* Log CTA */}
       <button
         onClick={() => navigate('/patient/vitals')}
         style={{
