@@ -66,7 +66,6 @@ for pid_str, cfg in VITALS_CONFIG.items():
             spo2_resting=round(cfg["spo2_base"] + math.sin(day * 0.6) * 2 + noise, 1),
             hr_resting=int(cfg["hr_base"] + math.cos(day * 0.4) * 5),
             dyspnea_borg=max(0, min(10, int(cfg["dysp_base"] + math.sin(day * 0.8) * 1.5))),
-            sputum_score=random.choice([0, 0, 0, 1, 2]),
             fatigue_level=random.choice([1, 2, 2, 3, 3, 4]),
             cough_type=random.choice(["None", "None", "Dry", "Productive"]),
         ))
