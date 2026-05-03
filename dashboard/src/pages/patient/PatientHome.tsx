@@ -1,7 +1,11 @@
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { Wind, Activity, ChevronRight, Upload, FileText, Clock } from 'lucide-react';
+import { Wind, Activity, ChevronRight, Upload, FileText, Clock, Heart, TrendingDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { apiService, type GameState, type DailyVital, type RiskPrediction, type BreathingSession, type RehabPlan } from '../../services/api';
+import { 
+  LineChart, Line, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine 
+} from 'recharts';
+import { apiService, type GameState, type DailyVital, type RiskPrediction, type BreathingSession, type RehabPlan, type PFTResult } from '../../services/api';
 
 interface PatientContext {
   patientId: string;
@@ -16,26 +20,34 @@ const TREE_STATES: Record<string, { emoji: string; label: string; tagline: strin
   dormant:  { emoji: '🪨', label: 'Dormant',           tagline: 'Your tree missed you today.',    color: '#6b7280' },
 };
 
+const CHART_TOOLTIP = {
+  background: '#161c2d', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, color: '#f0f4ff', fontSize: 12,
+};
+
 export default function PatientHome() {
   const navigate = useNavigate();
   const { patientId, patientName } = useOutletContext<PatientContext>();
   const firstName = patientName?.split(' ')[0] ?? 'there';
 
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [latestVital, setLatestVital] = useState<DailyVital | null>(null);
-  const [riskPred, setRiskPred] = useState<RiskPrediction | null>(null);
+  const [vitals, setVitals] = useState<DailyVital[]>([]);
+  const [pft, setPft] = useState<PFTResult[]>([]);
   const [sessions, setSessions] = useState<BreathingSession[]>([]);
+  const [riskPred, setRiskPred] = useState<RiskPrediction | null>(null);
   const [rehabPlan, setRehabPlan] = useState<RehabPlan | null>(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     try {
-      const vitalsRes = await apiService.getPatientVitals(patientId, 1);
-      const allVitals = vitalsRes.data;
-      setLatestVital(allVitals[allVitals.length - 1] ?? null);
+      const [vitRes, pftRes, sessRes] = await Promise.all([
+        apiService.getPatientVitals(patientId, 14),
+        apiService.getPatientPFT(patientId),
+        apiService.getPatientSessions(patientId)
+      ]);
 
-      const sessRes = await apiService.getPatientSessions(patientId);
+      setVitals(vitRes.data);
+      setPft(pftRes.data);
       setSessions(sessRes.data);
       
       const now = Date.now();
@@ -80,15 +92,34 @@ export default function PatientHome() {
     }
   };
 
+  // Chart data preparation
+  const vitalsChart = vitals.map(v => ({
+    date: new Date(v.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    spo2: v.spo2_resting,
+    dyspnea: v.dyspnea_borg,
+  }));
+
+  const pftChart = pft.map(p => ({
+    date: new Date(p.test_date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+    fev1: p.fev1_pct_predicted,
+  }));
+
+  const sessionsChart = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const dayStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayKey = d.toISOString().slice(0, 10);
+    const sessForDay = sessions.filter(s => s.started_at?.slice(0, 10) === dayKey);
+    return { date: dayStr, good_pct: sessForDay.length > 0 ? sessForDay[0].good_breath_pct : 0 };
+  });
+
+  const latestVital = vitals[vitals.length - 1];
   const treeStateKey = gameState?.tree_state ?? 'dormant';
   const tree = TREE_STATES[treeStateKey] ?? TREE_STATES.dormant;
-  const streak = gameState?.current_streak_days ?? 0;
-  const badge = streak >= 90 ? '🥇' : streak >= 30 ? '🥈' : streak >= 7 ? '🥉' : null;
-
   const sessThisWeek = treeStateKey === 'lush' ? 7 : treeStateKey === 'healthy' ? 5 : treeStateKey === 'wilting' ? 3 : treeStateKey === 'stressed' ? 1 : 0;
 
   return (
-    <div>
+    <div style={{ paddingBottom: 40 }}>
       {/* Greeting + Action */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
@@ -111,44 +142,18 @@ export default function PatientHome() {
         </label>
       </div>
 
-      {/* Rehab Plan Banner */}
-      {rehabPlan && (
-        <div style={{ 
-          background: 'linear-gradient(135deg, rgba(59,130,246,0.08), rgba(16,185,129,0.08))', 
-          border: '1px solid rgba(59,130,246,0.2)', borderRadius: 16, padding: 16, marginBottom: 20 
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <FileText color="#3b82f6" size={18} />
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Your Personalized Plan</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10 }}>
-              <div style={{ fontSize: 10, color: '#8892a4', textTransform: 'uppercase' }}>Frequency</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{rehabPlan.session_frequency_daily}x daily</div>
-            </div>
-            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10 }}>
-              <div style={{ fontSize: 10, color: '#8892a4', textTransform: 'uppercase' }}>Intensity</div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{rehabPlan.intensity_level}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Respiratory Tree */}
       <div className="tree-card">
         <span className="tree-emoji">{tree.emoji}</span>
         <div className="tree-label" style={{ color: tree.color }}>{tree.label}</div>
         <div className="tree-tagline">{tree.tagline}</div>
-
         <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 14 }}>
           {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d, i) => (
             <div key={d} style={{ textAlign: 'center' }}>
               <div style={{
-                width: 8, height: 8,
-                borderRadius: '50%',
+                width: 8, height: 8, borderRadius: '50%',
                 background: i < sessThisWeek ? tree.color : 'rgba(255,255,255,0.1)',
-                margin: '0 auto 3px',
-                boxShadow: i < sessThisWeek ? `0 0 6px ${tree.color}` : 'none',
+                margin: '0 auto 3px', boxShadow: i < sessThisWeek ? `0 0 6px ${tree.color}` : 'none',
               }} />
               <div style={{ fontSize: 8, color: '#4a5568' }}>{d}</div>
             </div>
@@ -156,113 +161,85 @@ export default function PatientHome() {
         </div>
       </div>
 
-      <div className="streak-row">
-        <div className="streak-badge">
-          <div className="streak-icon">🔥</div>
-          <div className="streak-value">{loading ? '—' : streak}</div>
-          <div className="streak-label">Day Streak</div>
-        </div>
-        {badge && (
-          <div className="streak-badge">
-            <div className="streak-icon">{badge}</div>
-            <div className="streak-value" style={{ fontSize: 18 }}>
-              {streak >= 90 ? 'Gold' : streak >= 30 ? 'Silver' : 'Bronze'}
-            </div>
-            <div className="streak-label">Badge Level</div>
-          </div>
-        )}
-        <div className="streak-badge">
-          <div className="streak-icon">⚡</div>
-          <div className="streak-value">{loading ? '—' : (gameState?.total_xp ?? 0).toLocaleString()}</div>
-          <div className="streak-label">Total XP</div>
-        </div>
-      </div>
-
-      <button className="start-session-btn" onClick={() => navigate('/patient/session')}>
-        <Wind size={20} />
-        Start Breathing Session
+      <button className="start-session-btn" onClick={() => navigate('/patient/session')} style={{ marginBottom: 20 }}>
+        <Wind size={20} /> Start Breathing Session
       </button>
 
-      {/* Risk status */}
-      <div style={{
-        background: riskPred?.risk_level === 'Critical' ? 'rgba(239,68,68,0.08)'
-          : riskPred?.risk_level === 'High'     ? 'rgba(249,115,22,0.08)'
-          : riskPred?.risk_level === 'Moderate' ? 'rgba(245,158,11,0.08)'
-          : 'rgba(59,130,246,0.08)',
-        border: `1px solid ${riskPred?.risk_level === 'Critical' ? 'rgba(239,68,68,0.2)'
-          : riskPred?.risk_level === 'High'     ? 'rgba(249,115,22,0.2)'
-          : riskPred?.risk_level === 'Moderate' ? 'rgba(245,158,11,0.2)'
-          : 'rgba(59,130,246,0.2)'}`,
-        borderRadius: 14, padding: 14,
-        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20,
-      }}>
-        <div style={{ fontSize: 28 }}>
-          {riskPred?.risk_level === 'Critical' ? '🚨'
-            : riskPred?.risk_level === 'High'     ? '⚠️'
-            : riskPred?.risk_level === 'Moderate' ? '🟡' : '🛡️'}
-        </div>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Today's Risk Score</div>
-          <div style={{ fontSize: 12, color: '#8892a4', marginTop: 2 }}>
-            {riskPred ? (
-              <>
-                <span style={{
-                  color: riskPred.risk_level === 'Critical' ? '#ef4444'
-                    : riskPred.risk_level === 'High'     ? '#f97316'
-                    : riskPred.risk_level === 'Moderate' ? '#f59e0b' : '#3b82f6',
-                  fontWeight: 700,
-                }}>
-                  {riskPred.risk_level} ({Math.round((riskPred.risk_score ?? 0) * 100)}%)
-                </span>
-                {' — '}
-                {riskPred.risk_level === 'Critical' ? 'Contact your care team immediately.'
-                  : riskPred.risk_level === 'High'   ? 'Please contact your therapist today.'
-                  : riskPred.risk_level === 'Moderate'? 'Rest more today; ensure medication adherence.'
-                  : 'Your vitals look stable. Keep up the good work!'}
-              </>
-            ) : 'No prediction yet — complete a session to generate your score.'}
+      {/* TRENDS SECTION (Requested: All graphs in patient portal) */}
+      <div className="section-title">Clinical Trends</div>
+      
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
+        {/* Lung Function Trend */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: 16, borderRadius: 18, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingDown size={14} color="#3b82f6" /> FEV₁ Lung Function (%)
           </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={pftChart}>
+              <defs>
+                <linearGradient id="lungGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" hide />
+              <YAxis hide domain={[30, 100]} />
+              <Tooltip contentStyle={CHART_TOOLTIP} />
+              <Area type="monotone" dataKey="fev1" stroke="#3b82f6" fill="url(#lungGrad)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Dyspnea Trend */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: 16, borderRadius: 18, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Wind size={14} color="#f97316" /> Shortness of Breath (Borg)
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={vitalsChart}>
+              <XAxis dataKey="date" hide />
+              <YAxis hide domain={[0, 10]} />
+              <Tooltip contentStyle={CHART_TOOLTIP} />
+              <Area type="monotone" dataKey="dyspnea" stroke="#f97316" fill="rgba(249,115,22,0.1)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Adherence */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', padding: 16, borderRadius: 18, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={14} color="#10b981" /> Exercise Adherence (Last 7 Days)
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <BarChart data={sessionsChart}>
+              <XAxis dataKey="date" tick={{ fill: '#4a5568', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis hide domain={[0, 100]} />
+              <Bar dataKey="good_pct" fill="#10b981" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
       {/* Session History */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div className="section-title" style={{ marginBottom: 0 }}>Recent Sessions</div>
-        <button 
-          onClick={() => navigate('/patient/history')}
-          style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-        >
-          View All
-        </button>
+        <div className="section-title" style={{ marginBottom: 0 }}>Recent Activity</div>
+        <button onClick={() => navigate('/patient/history')} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>View All</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
         {sessions.length === 0 ? (
-          <div style={{ padding: 20, textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 14, color: '#8892a4', fontSize: 13 }}>
-            No sessions completed yet.
-          </div>
+          <div style={{ padding: 20, textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 14, color: '#8892a4', fontSize: 13 }}>No sessions yet.</div>
         ) : (
-          sessions.slice(0, 3).map(s => (
-            <div key={s.id} style={{ 
-              background: 'rgba(255,255,255,0.02)', borderRadius: 14, padding: 12,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              border: '1px solid rgba(255,255,255,0.05)'
-            }}>
+          sessions.slice(0, 2).map(s => (
+            <div key={s.id} style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 14, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ 
-                  width: 36, height: 36, borderRadius: 10, background: 'rgba(16,185,129,0.1)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981'
-                }}>
-                  <Clock size={18} />
-                </div>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}><Clock size={18} /></div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{s.exercise_type === 'diaphragmatic' ? 'Diaphragmatic' : 'Pursed Lip'}</div>
                   <div style={{ fontSize: 11, color: '#8892a4' }}>{new Date(s.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: (s.good_breath_pct ?? 0) >= 80 ? '#10b981' : '#f59e0b' }}>
-                  {Math.round(s.good_breath_pct ?? 0)}%
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: (s.good_breath_pct ?? 0) >= 80 ? '#10b981' : '#f59e0b' }}>{Math.round(s.good_breath_pct ?? 0)}%</div>
                 <div style={{ fontSize: 10, color: '#8892a4' }}>Accuracy</div>
               </div>
             </div>
@@ -270,50 +247,11 @@ export default function PatientHome() {
         )}
       </div>
 
-      <div className="section-title">Latest Vitals</div>
-      <div className="vitals-quick-grid">
-        <div className="vital-quick-card">
-          <div className="vq-label">SpO₂</div>
-          <div className="vq-value" style={{ color: latestVital?.spo2_resting != null && latestVital.spo2_resting < 92 ? '#ef4444' : '#10b981' }}>
-            {latestVital?.spo2_resting ?? '—'}
-          </div>
-          <div className="vq-unit">%  resting</div>
-        </div>
-        <div className="vital-quick-card">
-          <div className="vq-label">Heart Rate</div>
-          <div className="vq-value" style={{ color: '#3b82f6' }}>
-            {latestVital?.hr_resting ?? '—'}
-          </div>
-          <div className="vq-unit">bpm resting</div>
-        </div>
-        <div className="vital-quick-card">
-          <div className="vq-label">Dyspnea</div>
-          <div className="vq-value" style={{ color: latestVital?.dyspnea_borg != null && latestVital.dyspnea_borg >= 7 ? '#ef4444' : '#f59e0b' }}>
-            {latestVital?.dyspnea_borg ?? '—'}
-          </div>
-          <div className="vq-unit">/ 10 Borg</div>
-        </div>
-        <div className="vital-quick-card">
-          <div className="vq-label">Fatigue</div>
-          <div className="vq-value" style={{ color: '#8b5cf6' }}>
-            {latestVital?.fatigue_level ?? '—'}
-          </div>
-          <div className="vq-unit">/ 5 level</div>
-        </div>
-      </div>
-
       <button
         onClick={() => navigate('/patient/vitals')}
-        style={{
-          width: '100%', padding: '14px', borderRadius: 14, border: '1px solid rgba(16,185,129,0.3)',
-          background: 'rgba(16,185,129,0.08)', color: '#10b981', font: '600 14px Inter',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          fontFamily: 'inherit',
-        }}
+        style={{ width: '100%', padding: '14px', borderRadius: 14, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#10b981', font: '600 14px Inter', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'inherit' }}
       >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={16} /> Log Today's Vitals
-        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={16} /> Log Today's Vitals</span>
         <ChevronRight size={16} />
       </button>
     </div>

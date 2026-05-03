@@ -118,24 +118,21 @@ export default function BreathingSession() {
   const speak = (text: string, force = false) => {
     if (!window.speechSynthesis) return;
     const now = Date.now();
-    if (!force && now - L.current.lastSpeak < 2500) return; // Slightly longer debounce
+    // Much longer debounce to prevent feeling rushed
+    if (!force && now - L.current.lastSpeak < 4000) return; 
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.85; // Even calmer pace
-    utterance.pitch = 1.0;
+    utterance.rate = 0.8; // Even slower, calmer pace
+    utterance.pitch = 0.95;
     window.speechSynthesis.speak(utterance);
     L.current.lastSpeak = now;
   };
 
   const countdown = async () => {
-    speak("Ready? Starting in 3.", true);
-    await new Promise(r => setTimeout(r, 1000));
-    speak("2.", true);
-    await new Promise(r => setTimeout(r, 1000));
-    speak("1.", true);
-    await new Promise(r => setTimeout(r, 1000));
-    speak("Begin. Breathe in deeply through your nose.", true);
+    speak("Prepare to begin.", true);
+    await new Promise(r => setTimeout(r, 2000));
+    speak("Breathe in deeply through your nose.", true);
   };
 
   // ── Animation loop ────────────────────────────────────────────
@@ -143,8 +140,10 @@ export default function BreathingSession() {
     const vid = videoRef.current, cvs = canvasRef.current;
     if (!vid || !cvs) { animRef.current = requestAnimationFrame(loop); return; }
 
-    const ctx = cvs.getContext('2d')!;
+    const ctx = cvs.getContext('2d', { alpha: false })!; // Optimize context
     if (vid.videoWidth) { cvs.width = vid.videoWidth; cvs.height = vid.videoHeight; }
+    
+    // Clear and Draw video
     ctx.drawImage(vid, 0, 0, cvs.width, cvs.height);
 
     const l = L.current, now = performance.now();
@@ -157,47 +156,61 @@ export default function BreathingSession() {
         const lm = res.landmarks[0];
         const draw = new DrawingUtils(ctx);
         
-        // Draw Pose (Vibrant & Solid)
+        // Draw Pose (Slightly more subtle to reduce flashing feel)
         draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS,
-          { color: '#38bdf8', lineWidth: 3 });
+          { color: 'rgba(56,189,248,0.6)', lineWidth: 2 });
         draw.drawLandmarks(lm, 
-          { color: '#00ff96', fillColor: '#00ff96', radius: 4, lineWidth: 2 });
+          { color: '#00ff96', fillColor: '#00ff96', radius: 3, lineWidth: 1 });
         
-        // Highlight core tracking points with larger markers
+        // Highlight core tracking points
         draw.drawLandmarks([lm[11], lm[12], lm[23], lm[24]], 
-          { color: '#fff', fillColor: '#00ff96', radius: 6, lineWidth: 3 });
+          { color: '#fff', fillColor: '#00ff96', radius: 5, lineWidth: 2 });
 
         const shY = (lm[11].y + lm[12].y) / 2;
         const hipY = (lm[23].y + lm[24].y) / 2;
         const abY = shY * 0.35 + hipY * 0.65;
 
-        if (l.calib < 80) {
+        // ── Calibration ────────────────────────────────────────
+        if (l.calib < 100) { // Slightly longer for stability
           l.calib++;
-          l.baseSh += shY/80;
-          l.baseAb += abY/80;
+          l.baseSh += shY/100;
+          l.baseAb += abY/100;
           l.phaseRef = 'CALIBRATING';
           if (l.calib === 1) {
             setPhase('CALIBRATING');
-            speak("Hold still while we calibrate your posture.", true);
+            speak("Please stand still while we calibrate.", true);
           }
-          if (l.calib === 80) {
-            speak("Calibration finished. Follow the rhythm.", true);
+          if (l.calib === 100) {
+            speak("Calibration complete.", true);
             countdown();
           }
           
+          // Enhanced Calibration Overlay
+          const pad = 40;
+          const barW = cvs.width - (pad * 2);
+          const progress = l.calib / 100;
+          
+          ctx.fillStyle = 'rgba(0,0,0,0.8)';
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(pad, cvs.height - 80, barW, 40, 12);
+            ctx.fill();
+          } else {
+            ctx.fillRect(pad, cvs.height - 80, barW, 40);
+          }
+          
           ctx.fillStyle = 'rgba(245,158,11,0.2)';
-          ctx.fillRect(0, cvs.height-48, cvs.width*(l.calib/80), 4);
-          ctx.fillStyle = 'rgba(0,0,0,0.7)';
-          ctx.fillRect(0, cvs.height-44, cvs.width, 44);
+          ctx.fillRect(pad + 5, cvs.height - 75, (barW - 10) * progress, 30);
+          
           ctx.fillStyle = '#f59e0b';
-          ctx.font = 'bold 16px Inter,sans-serif';
+          ctx.font = 'bold 15px Inter,sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(`Calibrating torso… ${Math.round(l.calib/80*100)}%`, cvs.width/2, cvs.height-16);
+          ctx.fillText(`SYSTEM CALIBRATING: ${Math.round(progress * 100)}%`, cvs.width/2, cvs.height - 54);
 
         } else {
+          // ── Detection ─────────────────────────────────────────
           const rawSh = (shY - l.baseSh) * 250;
           const rawAb = (abY - l.baseAb) * 250;
-          
           const smSh = ewma(l.bufSh, rawSh);
           const smAb = ewma(l.bufAb, rawAb);
           
@@ -212,32 +225,30 @@ export default function BreathingSession() {
           setExcur(Math.min(100, Math.round(ampAb * 8)));
           setDepth(Math.min(100, Math.round(ampAb * 5.5)));
 
-          const threshold = 1.5; 
+          const threshold = 1.8; 
           const curDir = smAb > l.prev ? 1 : -1;
           
           if (curDir !== l.dir && ampAb > threshold) {
             if (l.dir === 1) {
               const gap = now - l.lastPeak;
-              if (l.lastPeak > 0 && gap > 2000 && gap < 10000) {
+              if (l.lastPeak > 0 && gap > 2500 && gap < 12000) {
                 l.tot++;
                 l.stamps.push(now);
                 if (l.stamps.length > 10) l.stamps.shift();
                 
                 const ratio = ampSh / (ampAb + 0.001);
-                const isGood = ratio < 0.6 && ampAb > 2.0;
+                const isGood = ratio < 0.55 && ampAb > 2.2;
                 
+                // Reduced feedback frequency to prevent feeling rushed
                 if (isGood) {
                   l.good++;
-                  const phrases = ["Great form.", "Perfect breath.", "Keep that rhythm.", "Excellent."];
-                  speak(phrases[Math.floor(Math.random()*phrases.length)]);
+                  if (l.tot % 3 === 0) speak("Good rhythm."); 
                 } else {
-                  speak("Keep your shoulders down. Push your belly out.");
+                  if (l.tot % 2 === 0) speak("Relax your shoulders.");
                 }
                 
                 const gp = Math.round(l.good / l.tot * 100);
-                setTotal(l.tot); 
-                setGoodPct(gp); 
-                setTech(gp);
+                setTotal(l.tot); setGoodPct(gp); setTech(gp);
                 setVerdict(isGood ? 'Good Breath' : 'Apical Fault');
                 
                 if (l.stamps.length >= 2) {
@@ -252,39 +263,41 @@ export default function BreathingSession() {
           l.prev = smAb;
 
           l.pFrame++;
-          const cycle = l.pFrame % 240; // Slower 4-second cycle for clearer pace
+          const cycle = l.pFrame % 300; // Even slower 5-second cycle
           let p: Phase = 'INHALE';
-          if (cycle < 80) p = 'INHALE';
-          else if (cycle < 120) p = 'HOLD';
+          if (cycle < 100) p = 'INHALE';
+          else if (cycle < 150) p = 'HOLD';
           else p = 'EXHALE';
 
           if (p !== l.phaseRef) { 
             l.phaseRef = p; 
             setPhase(p); 
-            if (p === 'INHALE') speak("Breathe in.");
-            if (p === 'HOLD') speak("Hold it.");
-            if (p === 'EXHALE') speak("Breathe out slowly.");
+            if (p === 'INHALE') speak("Inhale.");
+            if (p === 'HOLD') speak("Hold.");
+            if (p === 'EXHALE') speak("Exhale.");
           }
 
+          // Top Status Bar (Static fill to reduce flashing)
           const isGoodNow = (ampSh / (ampAb + 0.001)) < 0.6 && ampAb > 1.0;
-          ctx.fillStyle = isGoodNow ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.15)';
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
           ctx.fillRect(0,0,cvs.width,44);
-          ctx.fillStyle = isGoodNow ? '#10b981' : '#ef4444';
+          ctx.fillStyle = isGoodNow ? '#10b981' : '#f59e0b';
           ctx.font = 'bold 14px Inter,sans-serif';
           ctx.textAlign = 'left';
           ctx.fillText(
-            isGoodNow ? '✓ Proper Diaphragmatic Form' : '⚠ Relax Your Shoulders',
+            isGoodNow ? '✓ DIAPHRAGM ACTIVE' : '⚠ RELAX SHOULDERS',
             16, 28
           );
 
+          // Bottom Phase Overlay (Static background)
           const phColors: Record<Phase,string> = PC as any;
           const phLabels: Record<Phase,string> = {
             IDLE:'', CALIBRATING:'',
-            INHALE:'🌬  BREATHE IN DEEP',
-            HOLD:'⏸  HOLD BREATH',
-            EXHALE:'💨  EXHALE SLOWLY',
+            INHALE:'🌬  BREATHE IN',
+            HOLD:'⏸  HOLD',
+            EXHALE:'💨  BREATHE OUT',
           };
-          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.fillStyle = 'rgba(0,0,0,0.8)';
           ctx.fillRect(0, cvs.height-52, cvs.width, 52);
           ctx.fillStyle = phColors[p] || '#fff';
           ctx.font = 'bold 18px Inter,sans-serif';
@@ -292,12 +305,12 @@ export default function BreathingSession() {
           ctx.fillText(phLabels[p] || '', cvs.width/2, cvs.height-20);
         }
       } else {
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.fillRect(0,0,cvs.width,cvs.height);
         ctx.fillStyle = '#ef4444';
         ctx.font = 'bold 16px Inter,sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('⚠  Position your body in frame', cvs.width/2, cvs.height/2);
+        ctx.fillText('⚠  STAY IN FRAME', cvs.width/2, cvs.height/2);
       }
     }
     animRef.current = requestAnimationFrame(loop);
