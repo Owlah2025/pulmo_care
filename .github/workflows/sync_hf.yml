@@ -1,0 +1,24 @@
+name: Sync to Hugging Face Hub
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Push to hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # We use subtree split to only push the 'backend' folder to Hugging Face
+          # Since HF expects the Dockerfile in the root of its own repo
+          git config --global user.email "sync-bot@example.com"
+          git config --global user.name "HF Sync Bot"
+          
+          # This command extracts the 'backend' folder into a temporary branch and pushes it
+          git subtree push --prefix backend https://Owlah2025:$HF_TOKEN@huggingface.co/spaces/Owlah2025/pulmo-backend main
