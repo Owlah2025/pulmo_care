@@ -20,5 +20,7 @@ jobs:
           git config --global user.email "sync-bot@example.com"
           git config --global user.name "HF Sync Bot"
           
-          # Force push the 'backend' folder to Hugging Face to overwrite initial files
-          git subtree push --prefix backend https://AhmedHazem23:$HF_TOKEN@huggingface.co/spaces/AhmedHazem23/pulmo_backend main --force
+          # Manually split the 'backend' folder into a temporary branch
+          # Then force push that branch to Hugging Face
+          git subtree split --prefix backend -b hf-sync
+          git push https://AhmedHazem23:$HF_TOKEN@huggingface.co/spaces/AhmedHazem23/pulmo_backend hf-sync:main --force
