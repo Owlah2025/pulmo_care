@@ -1,0 +1,47 @@
+name: pulmo_care
+description: PULMO CARE — Pulmonary Rehabilitation Mobile App
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Camera & MediaPipe
+  camera: ^0.10.9
+  google_mlkit_pose_detection: ^0.11.0
+  google_mlkit_face_detection: ^0.11.0
+
+  # IoT / Bluetooth
+  flutter_blue_plus: ^1.31.0
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+
+  # Local Storage
+  sqflite: ^2.3.2
+  path: ^1.9.0
+
+  # TTS
+  flutter_tts: ^3.8.5
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Reactive streams
+  rxdart: ^0.27.7
+
+  # UI & Animations
+  lottie: ^3.1.0
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

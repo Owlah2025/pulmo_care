@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+  frontend:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulmo_user
+      POSTGRES_PASSWORD: pulmo_password
+      POSTGRES_DB: pulmo_care
+      DATABASE_URL: postgresql://pulmo_user:pulmo_password@db:5432/pulmo_care
+      REDIS_URL: redis://redis:6379/0
+      # Needed to tell FastAPI to allow websockets from external domains
+      CORS_ORIGINS: "*" 
+    expose:
+      - "8000"
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: timescale/timescaledb:latest-pg15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulmo_user
+      POSTGRES_PASSWORD: pulmo_password
+      POSTGRES_DB: pulmo_care
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

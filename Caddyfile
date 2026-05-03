@@ -1,0 +1,30 @@
+# Caddyfile for Auto-HTTPS and Reverse Proxying
+
+# NOTE: Replace `:80` with your domain (e.g., `pulmo.yourdomain.com`) to enable Auto-HTTPS
+# Or if using just IP, keep it as `:80`
+:80 {
+    # ── Backend Routes ──
+    # Route all API calls to the backend container
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Route FastAPI docs
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+    
+    # Route WebSockets (Alerts, Chat, etc.)
+    handle /ws/* {
+        reverse_proxy backend:8000
+    }
+
+    # ── Frontend Routes ──
+    # Everything else goes to the Vite/React dashboard
+    handle /* {
+        reverse_proxy frontend:80
+    }
+}

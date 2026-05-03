@@ -1,0 +1,392 @@
+/* ═══════════════════════════════════════════════════════════════
+   Breathing Session — DiaphragmCoach Wide Layout
+   ═══════════════════════════════════════════════════════════════ */
+
+.bs-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: calc(100vh - 130px);
+  background: #070c18;
+}
+
+/* ── Split: video | panel ─────────────────────────────────────── */
+.bs-layout {
+  display: flex;
+  flex: 1;
+  min-height: calc(100vh - 130px);
+}
+
+/* ── Left Video Column ────────────────────────────────────────── */
+.bs-video-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: #040810;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+.bs-canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.bs-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* idle state shown when not running */
+.bs-idle-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px;
+  background: linear-gradient(160deg, #050b16 0%, #091224 100%);
+}
+
+.bs-idle-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+  color: #f0f4ff;
+}
+
+.bs-idle-sub {
+  font-size: 13px;
+  color: #8892a4;
+  max-width: 360px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+.bs-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.bs-idle-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 12px 18px;
+  text-align: left;
+}
+
+/* ── Status badge (top-left of camera) ───────────────────────── */
+.bs-badge {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1px solid;
+  font-size: 13px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+  background: rgba(7,12,24,0.7);
+  letter-spacing: 0.02em;
+}
+
+.bs-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  animation: dot-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes dot-pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.5; transform:scale(1.4); }
+}
+
+/* ── Tips bar (bottom of video col) ──────────────────────────── */
+.bs-tips-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 16px;
+  font-size: 11px;
+  color: #4b5563;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  background: rgba(255,255,255,0.015);
+  flex-wrap: wrap;
+}
+
+/* ── Right Panel ──────────────────────────────────────────────── */
+.bs-panel {
+  width: 310px;
+  flex-shrink: 0;
+  background: #0d1528;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 16px;
+  overflow-y: auto;
+  border-left: 1px solid rgba(255,255,255,0.06);
+}
+
+/* Timer row */
+.bs-panel-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.bs-timer-label {
+  font-size: 9px;
+  font-weight: 700;
+  color: #4b5563;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bs-timer-val {
+  font-family: 'Courier New', monospace;
+  font-size: 26px;
+  font-weight: 800;
+  color: #f0f4ff;
+  letter-spacing: 3px;
+  line-height: 1.1;
+}
+
+.bs-phase-chip {
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1px solid;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.bs-hist-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: #8892a4;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.bs-hist-btn:hover { color: #f0f4ff; background: rgba(255,255,255,0.08); }
+
+/* 2×2 metric grid */
+.bs-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bs-metric-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 12px 10px;
+}
+
+.bs-metric-val {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.bs-metric-lbl {
+  font-size: 8.5px;
+  color: #4b5563;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 5px;
+}
+
+/* Excursion bar */
+.bs-excursion-block {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 11px 12px;
+}
+
+.bs-excursion-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #8892a4;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.bs-excursion-track {
+  height: 6px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bs-excursion-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Technique ring */
+.bs-ring-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  padding: 4px 0;
+}
+
+.bs-ring-inner {
+  position: absolute;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Live signal chart */
+.bs-signal-card {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.bs-signal-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 10px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+/* Buttons */
+.bs-start-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: white;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+  box-shadow: 0 6px 22px rgba(59,130,246,0.35);
+  letter-spacing: -0.2px;
+}
+.bs-start-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(59,130,246,0.45); }
+.bs-start-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bs-stop-btn {
+  width: 100%;
+  padding: 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(239,68,68,0.4);
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.bs-stop-btn:hover { background: rgba(239,68,68,0.2); }
+
+.bs-recal-btn {
+  width: 100%;
+  padding: 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #8892a4;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.bs-recal-btn:hover { color: #f0f4ff; }
+
+.bs-saved-banner {
+  background: rgba(16,185,129,0.1);
+  border: 1px solid rgba(16,185,129,0.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #10b981;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* ── History drawer ───────────────────────────────────────────── */
+.bs-history {
+  background: #0a1020;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 20px 24px;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bs-history-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  color: #f0f4ff;
+}
+
+.bs-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* ── Mobile stack ─────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .bs-layout      { flex-direction: column; }
+  .bs-panel       { width: 100%; }
+  .bs-video-col   { min-height: 300px; }
+}
