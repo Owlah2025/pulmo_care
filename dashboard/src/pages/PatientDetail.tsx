@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Activity, Wind, Heart, TrendingDown, FileText, Upload, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Activity, Wind, Heart, TrendingDown, FileText, Upload } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
   LineChart, Line, AreaChart, Area, BarChart, Bar,
