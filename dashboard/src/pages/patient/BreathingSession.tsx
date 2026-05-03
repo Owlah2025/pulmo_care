@@ -148,11 +148,15 @@ export default function BreathingSession() {
         const lm = res.landmarks[0];
         const draw = new DrawingUtils(ctx);
         
-        // Draw Pose
+        // Draw Pose (Vibrant & Solid)
         draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS,
-          { color: 'rgba(56,189,248,0.5)', lineWidth: 2 });
-        draw.drawLandmarks([lm[11], lm[12], lm[23], lm[24]], // Focus on core markers
-          { color: '#00ff96', fillColor: 'rgba(0,255,150,0.25)', radius: 5, lineWidth: 2 });
+          { color: '#38bdf8', lineWidth: 3 });
+        draw.drawLandmarks(lm, 
+          { color: '#00ff96', fillColor: '#00ff96', radius: 4, lineWidth: 2 });
+        
+        // Highlight core tracking points with larger markers
+        draw.drawLandmarks([lm[11], lm[12], lm[23], lm[24]], 
+          { color: '#fff', fillColor: '#00ff96', radius: 6, lineWidth: 3 });
 
         // Calculate stable torso points
         // We use an average of shoulders and hips to estimate chest and abdomen excursion
