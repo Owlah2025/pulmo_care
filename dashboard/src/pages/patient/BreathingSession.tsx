@@ -59,19 +59,22 @@ export default function BreathingSession() {
     phaseRef: 'IDLE' as Phase,
   });
 
-  // ── Load MediaPipe (local WASM + local model) ─────────────────
+  // ── Load MediaPipe (CDN WASM + CDN model) ─────────────────
   useEffect(() => {
     let dead = false;
     (async () => {
       try {
         setStatus('Loading WASM…');
-        const vision = await FilesetResolver.forVisionTasks('/mediapipe');
+        // Use CDN for WASM and helper scripts to ensure availability in production
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3'
+        );
         setStatus('Loading pose model…');
 
         const tryLoad = async (delegate: 'GPU'|'CPU') =>
           PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
-              modelAssetPath: '/mediapipe/pose_landmarker_lite.task',
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
               delegate,
             },
             runningMode: 'VIDEO',
