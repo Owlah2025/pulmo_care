@@ -8,7 +8,7 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Push to hub
@@ -20,5 +20,5 @@ jobs:
           git config --global user.email "sync-bot@example.com"
           git config --global user.name "HF Sync Bot"
           
-          # This command extracts the 'backend' folder into a temporary branch and pushes it
-          git subtree push --prefix backend https://AhmedHazem23:$HF_TOKEN@huggingface.co/spaces/AhmedHazem23/pulmo_backend main
+          # Force push the 'backend' folder to Hugging Face to overwrite initial files
+          git subtree push --prefix backend https://AhmedHazem23:$HF_TOKEN@huggingface.co/spaces/AhmedHazem23/pulmo_backend main --force
