@@ -111,6 +111,16 @@ export default function BreathingSession() {
   const ewma = (buf: number[], v: number, a=0.18) =>
     buf[buf.length-1]*(1-a) + v*a;
 
+  // ── Voice Assistant ──────────────────────────────────────────
+  const speak = (text: string) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel(); // Interrupt previous
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.1;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
   // ── Animation loop (defined once, no stale captures) ──────────
   const loop = () => {
     const vid = videoRef.current, cvs = canvasRef.current;
@@ -143,7 +153,9 @@ export default function BreathingSession() {
           l.baseSh += shY/60;
           l.baseAb += abY/60;
           l.phaseRef = 'CALIBRATING';
-          setPhase('CALIBRATING');
+          if (l.calib === 1) setPhase('CALIBRATING');
+          if (l.calib === 60) speak("Calibration complete. Let's begin.");
+          
           // progress bar
           ctx.fillStyle = 'rgba(245,158,11,0.2)';
           ctx.fillRect(0, cvs.height-48, cvs.width*(l.calib/60), 4);
@@ -179,7 +191,12 @@ export default function BreathingSession() {
                 l.stamps.push(now);
                 if (l.stamps.length > 10) l.stamps.shift();
                 const isGood = (ampSh/(ampAb+.001)) < 0.55 && ampAb > 1.8;
-                if (isGood) l.good++;
+                if (isGood) {
+                  l.good++;
+                  speak("Good breath.");
+                } else {
+                  speak("Try to relax your shoulders.");
+                }
                 const gp = Math.round(l.good/l.tot*100);
                 setTotal(l.tot); setGoodPct(gp); setTech(gp);
                 setVerdict(isGood ? 'Good Breath' : 'Apical Fault');
@@ -198,7 +215,13 @@ export default function BreathingSession() {
           l.pFrame++;
           const f = l.pFrame % 90;
           const p: Phase = f < 36 ? 'INHALE' : f < 50 ? 'HOLD' : 'EXHALE';
-          if (p !== l.phaseRef) { l.phaseRef = p; setPhase(p); }
+          if (p !== l.phaseRef) { 
+            l.phaseRef = p; 
+            setPhase(p); 
+            if (p === 'INHALE') speak("Breathe in.");
+            if (p === 'HOLD') speak("Hold.");
+            if (p === 'EXHALE') speak("Breathe out.");
+          }
 
           // Verdict badge on canvas
           const isGoodNow = (ampSh/(ampAb+.001)) < 0.55 && ampAb > 1.2;
