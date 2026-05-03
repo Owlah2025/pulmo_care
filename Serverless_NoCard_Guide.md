@@ -1,6 +1,6 @@
 # 🚀 Pulmo Care — No-Card Serverless Deployment Guide
 
-This guide explains how to deploy the entire stack for $0 without using a credit card.
+This guide explains how to deploy the entire stack for $0 without using a credit card or being in a restricted region.
 
 ## 1. Database (Neon.tech)
 1. Sign up at [Neon.tech](https://neon.tech/) using GitHub.
@@ -10,25 +10,30 @@ This guide explains how to deploy the entire stack for $0 without using a credit
 
 ## 2. Redis (Upstash)
 1. Sign up at [Upstash.com](https://upstash.com/).
-2. Create a **Redis** database (Global or choosing a region near you).
+2. Create a **Redis** database.
 3. Copy the **Redis URL**.
    - It looks like: `redis://default:abc1234@cool-slug-12345.upstash.io:6379`
 
-## 3. Backend API (Render.com)
-1. Push your code to a GitHub repository.
-2. Sign up at [Render.com](https://render.com/).
-3. Click **New +** -> **Web Service**.
-4. Connect your GitHub repository.
-5. **Settings**:
-   - **Name**: `pulmo-backend`
-   - **Runtime**: `Docker`
-   - **Plan**: `Free`
-6. **Environment Variables**: Click "Advanced" and add:
-   - `DATABASE_URL`: (Paste from Neon)
-   - `REDIS_URL`: (Paste from Upstash)
-   - `CORS_ORIGINS`: `["*"]`
-7. Click **Create Web Service**. 
-   - *Note: Once deployed, copy your service URL (e.g., `https://pulmo-backend.onrender.com`).*
+## 3. Backend API (Hugging Face Spaces)
+Hugging Face Spaces is a great way to host Docker-based APIs for free without a card.
+
+1. Sign up at [HuggingFace.co](https://huggingface.co/).
+2. Click **New Space**.
+3. **Name**: `pulmo-backend`.
+4. **SDK**: Choose **Docker**.
+5. **Hardware**: Choose the free "CPU Basic" (16GB RAM).
+6. Click **Create Space**.
+7. Go to the **Settings** tab of your new Space:
+   - Scroll to **Variables and Secrets**.
+   - Add **New Secret**: `DATABASE_URL` (Paste from Neon).
+   - Add **New Secret**: `REDIS_URL` (Paste from Upstash).
+   - Add **New Variable**: `CORS_ORIGINS` value `["*"]`.
+8. Connect your GitHub:
+   - In Settings, find **Connected GitHub Repository**.
+   - Link your `pulmo_care` repo.
+   - Set **Context Directory** to `backend`.
+9. The Space will build and show "Running". Your API URL will look like:
+   `https://[username]-pulmo-backend.hf.space`
 
 ## 4. Frontend Dashboard (Vercel)
 1. Sign up at [Vercel.com](https://vercel.com/) using GitHub.
@@ -39,11 +44,12 @@ This guide explains how to deploy the entire stack for $0 without using a credit
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
 5. **Environment Variables**:
-   - `VITE_API_URL`: (Paste your Render URL from Step 3)
+   - `VITE_API_URL`: (Paste your Hugging Face Space URL from Step 3)
+     *Note: Ensure there is no trailing slash.*
 6. Click **Deploy**.
 
 ## 5. Initialize Database
-Once Render is "Live", you need to run migrations. Render doesn't give you a terminal easily on the Free tier, so you can run this locally once while pointing to the Neon DB:
+Once the backend is Running, you need to run migrations. Run this locally once while pointing to the Neon DB:
 
 ```bash
 # From your local /backend folder:
@@ -55,10 +61,7 @@ python seed_demo.py
 ---
 
 ### Key Notes for Free Tiers:
-- **Spin-up time**: Render's free tier "sleeps" after 15 minutes of inactivity. The first person to visit the site will wait ~30 seconds for the backend to wake up.
-- **Neon Storage**: The free tier has a 500MB limit, which is plenty for this app's initial launch.
+- **Always On**: Hugging Face Spaces stay awake (no sleep mode like Render).
+- **Resources**: You get 16GB of RAM, which is excellent for AI tasks.
+- **Neon Storage**: The free tier has a 500MB limit.
 - **Upstash**: Limits to 10,000 requests per day.
-
-
-
-postgresql://neondb_owner:npg_bpjYTsEduF49@ep-small-band-amfb9p6z.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require
