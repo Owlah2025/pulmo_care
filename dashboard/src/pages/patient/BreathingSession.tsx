@@ -49,14 +49,21 @@ export default function BreathingSession() {
 
   // All loop state in one ref — zero stale-closure issues
   const L = useRef({
-    calib: 0, baseSh: 0, baseAb: 0,
+    calib: 0, 
+    baseSh: 0, 
+    baseAb: 0,
     bufSh: Array(80).fill(0) as number[],
     bufAb: Array(80).fill(0) as number[],
-    prev: 0, dir: 1, lastPeak: 0,
+    prev: 0, 
+    dir: 1, 
+    lastPeak: 0,
     stamps: [] as number[],
-    good: 0, tot: 0,
-    pFrame: 0, lastVT: -1,
+    good: 0, 
+    tot: 0,
+    pFrame: 0, 
+    lastVT: -1,
     phaseRef: 'IDLE' as Phase,
+    lastSpeak: 0, // Debounce for voice
   });
 
   // ── Load MediaPipe (CDN WASM + CDN model) ─────────────────
@@ -65,8 +72,6 @@ export default function BreathingSession() {
     (async () => {
       try {
         setStatus('Loading WASM…');
-        // Use CDN for WASM and helper scripts to ensure availability in production
-        // MUST include /wasm suffix for the resolver to find the correct binaries
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
         );
@@ -108,20 +113,25 @@ export default function BreathingSession() {
   const fmt = (s: number) =>
     `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
 
-  const ewma = (buf: number[], v: number, a=0.18) =>
+  const ewma = (buf: number[], v: number, a=0.15) => // Slightly more smoothing
     buf[buf.length-1]*(1-a) + v*a;
 
   // ── Voice Assistant ──────────────────────────────────────────
-  const speak = (text: string) => {
+  const speak = (text: string, force = false) => {
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel(); // Interrupt previous
+    const now = Date.now();
+    // Prevent rapid-fire speech unless forced
+    if (!force && now - L.current.lastSpeak < 2000) return; 
+
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.1;
+    utterance.rate = 0.9; // Slower, more professional pace
     utterance.pitch = 1.0;
     window.speechSynthesis.speak(utterance);
+    L.current.lastSpeak = now;
   };
 
-  // ── Animation loop (defined once, no stale captures) ──────────
+  // ── Animation loop ────────────────────────────────────────────
   const loop = () => {
     const vid = videoRef.current, cvs = canvasRef.current;
     if (!vid || !cvs) { animRef.current = requestAnimationFrame(loop); return; }
@@ -139,70 +149,97 @@ export default function BreathingSession() {
       if (res.landmarks.length > 0) {
         const lm = res.landmarks[0];
         const draw = new DrawingUtils(ctx);
+        
+        // Draw Pose
         draw.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS,
-          { color: 'rgba(56,189,248,0.8)', lineWidth: 2 });
-        draw.drawLandmarks(lm,
-          { color: '#00ff96', fillColor: 'rgba(0,255,150,0.25)', radius: 4, lineWidth: 1 });
+          { color: 'rgba(56,189,248,0.5)', lineWidth: 2 });
+        draw.drawLandmarks([lm[11], lm[12], lm[23], lm[24]], // Focus on core markers
+          { color: '#00ff96', fillColor: 'rgba(0,255,150,0.25)', radius: 5, lineWidth: 2 });
 
+        // Calculate stable torso points
+        // We use an average of shoulders and hips to estimate chest and abdomen excursion
         const shY = (lm[11].y + lm[12].y) / 2;
-        const abY = shY*0.38 + (lm[23].y+lm[24].y)/2*0.62;
+        const hipY = (lm[23].y + lm[24].y) / 2;
+        
+        // Abdomen is estimated at ~65% of the way down from shoulders to hips
+        const abY = shY * 0.35 + hipY * 0.65;
 
         // ── Calibration ────────────────────────────────────────
-        if (l.calib < 60) {
+        if (l.calib < 80) { // Longer calibration for stability
           l.calib++;
-          l.baseSh += shY/60;
-          l.baseAb += abY/60;
+          l.baseSh += shY/80;
+          l.baseAb += abY/80;
           l.phaseRef = 'CALIBRATING';
-          if (l.calib === 1) setPhase('CALIBRATING');
-          if (l.calib === 60) speak("Calibration complete. Let's begin.");
+          if (l.calib === 1) {
+            setPhase('CALIBRATING');
+            speak("Calibration starting. Please stand still.", true);
+          }
+          if (l.calib === 80) speak("Calibration complete. Start breathing with your belly.", true);
           
-          // progress bar
+          // Calibration Overlay
           ctx.fillStyle = 'rgba(245,158,11,0.2)';
-          ctx.fillRect(0, cvs.height-48, cvs.width*(l.calib/60), 4);
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(0, cvs.height-48, cvs.width*(l.calib/80), 4);
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
           ctx.fillRect(0, cvs.height-44, cvs.width, 44);
           ctx.fillStyle = '#f59e0b';
-          ctx.font = 'bold 15px Inter,sans-serif';
+          ctx.font = 'bold 16px Inter,sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(`Calibrating… ${l.calib}/60`, cvs.width/2, cvs.height-16);
+          ctx.fillText(`Calibrating torso… ${Math.round(l.calib/80*100)}%`, cvs.width/2, cvs.height-16);
 
         } else {
           // ── Detection ─────────────────────────────────────────
-          const rawSh = (shY - l.baseSh)*200;
-          const rawAb = (abY - l.baseAb)*200;
+          // Normalize movement relative to calibration baseline
+          const rawSh = (shY - l.baseSh) * 250;
+          const rawAb = (abY - l.baseAb) * 250;
+          
           const smSh = ewma(l.bufSh, rawSh);
           const smAb = ewma(l.bufAb, rawAb);
+          
           l.bufSh.shift(); l.bufSh.push(smSh);
           l.bufAb.shift(); l.bufAb.push(smAb);
           setSigSh([...l.bufSh]);
           setSigAb([...l.bufAb]);
 
-          const ampAb = Math.abs(smAb), ampSh = Math.abs(smSh);
-          setExcur(Math.min(100, Math.round(ampAb*9)));
-          setDepth(Math.min(100, Math.round(ampAb*6)));
+          const ampAb = Math.abs(smAb);
+          const ampSh = Math.abs(smSh);
+          
+          // Visual feedback for excursion
+          setExcur(Math.min(100, Math.round(ampAb * 8)));
+          setDepth(Math.min(100, Math.round(ampAb * 5.5)));
 
-          // Zero-crossing breath counter
+          // Robust Breath Counting (Zero-crossing with Hysteresis)
+          const threshold = 1.5; 
           const curDir = smAb > l.prev ? 1 : -1;
-          if (curDir !== l.dir && ampAb > 1.2) {
-            if (l.dir === 1) { // just hit peak → one breath
+          
+          if (curDir !== l.dir && ampAb > threshold) {
+            if (l.dir === 1) { // Peak detected
               const gap = now - l.lastPeak;
-              if (l.lastPeak > 0 && gap > 1800 && gap < 12000) {
+              if (l.lastPeak > 0 && gap > 2000 && gap < 10000) {
                 l.tot++;
                 l.stamps.push(now);
                 if (l.stamps.length > 10) l.stamps.shift();
-                const isGood = (ampSh/(ampAb+.001)) < 0.55 && ampAb > 1.8;
+                
+                // Technique check: Shoulder movement vs Abdominal movement
+                // If shoulder movement is more than 60% of abdominal, it's an apical fault
+                const ratio = ampSh / (ampAb + 0.001);
+                const isGood = ratio < 0.6 && ampAb > 2.0;
+                
                 if (isGood) {
                   l.good++;
-                  speak("Good breath.");
+                  speak("Excellent breath.");
                 } else {
-                  speak("Try to relax your shoulders.");
+                  speak("Focus on your belly, keep shoulders still.");
                 }
-                const gp = Math.round(l.good/l.tot*100);
-                setTotal(l.tot); setGoodPct(gp); setTech(gp);
+                
+                const gp = Math.round(l.good / l.tot * 100);
+                setTotal(l.tot); 
+                setGoodPct(gp); 
+                setTech(gp);
                 setVerdict(isGood ? 'Good Breath' : 'Apical Fault');
+                
                 if (l.stamps.length >= 2) {
-                  const span = (l.stamps[l.stamps.length-1]-l.stamps[0])/60000;
-                  setBpm(Math.min(40,Math.max(4,Math.round((l.stamps.length-1)/span))));
+                  const span = (l.stamps[l.stamps.length-1] - l.stamps[0]) / 60000;
+                  setBpm(Math.round((l.stamps.length-1) / span));
                 }
               }
               l.lastPeak = now;
@@ -211,10 +248,14 @@ export default function BreathingSession() {
           }
           l.prev = smAb;
 
-          // Phase cycling (visual guide)
+          // Phase Guidance (Slow 6-second cycle: 2s In, 1s Hold, 3s Out)
           l.pFrame++;
-          const f = l.pFrame % 90;
-          const p: Phase = f < 36 ? 'INHALE' : f < 50 ? 'HOLD' : 'EXHALE';
+          const cycle = l.pFrame % 180; // 60fps * 3s
+          let p: Phase = 'INHALE';
+          if (cycle < 60) p = 'INHALE';
+          else if (cycle < 90) p = 'HOLD';
+          else p = 'EXHALE';
+
           if (p !== l.phaseRef) { 
             l.phaseRef = p; 
             setPhase(p); 
@@ -223,47 +264,46 @@ export default function BreathingSession() {
             if (p === 'EXHALE') speak("Breathe out.");
           }
 
-          // Verdict badge on canvas
-          const isGoodNow = (ampSh/(ampAb+.001)) < 0.55 && ampAb > 1.2;
-          ctx.fillStyle = isGoodNow ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.1)';
-          ctx.fillRect(0,0,cvs.width,40);
+          // Top Overlay (Real-time Feedback)
+          const isGoodNow = (ampSh / (ampAb + 0.001)) < 0.6 && ampAb > 1.0;
+          ctx.fillStyle = isGoodNow ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.15)';
+          ctx.fillRect(0,0,cvs.width,44);
           ctx.fillStyle = isGoodNow ? '#10b981' : '#ef4444';
-          ctx.font = 'bold 13px Inter,sans-serif';
+          ctx.font = 'bold 14px Inter,sans-serif';
           ctx.textAlign = 'left';
           ctx.fillText(
-            isGoodNow ? '✓ Diaphragm active — good breath' : '⚠ Apical fault — relax shoulders',
-            12, 26
+            isGoodNow ? '✓ Proper Diaphragmatic Form' : '⚠ Using Shoulders — Relax Them',
+            16, 28
           );
 
-          // Phase coaching at bottom
+          // Bottom Phase Overlay
           const phColors: Record<Phase,string> = PC as any;
           const phLabels: Record<Phase,string> = {
             IDLE:'', CALIBRATING:'',
-            INHALE:'🌬  INHALE — belly rises',
-            HOLD:'⏸  HOLD — stay still',
-            EXHALE:'💨  EXHALE — slow release',
+            INHALE:'🌬  BREATHE IN DEEP',
+            HOLD:'⏸  HOLD BREATH',
+            EXHALE:'💨  EXHALE SLOWLY',
           };
-          ctx.fillStyle = 'rgba(0,0,0,0.6)';
-          ctx.fillRect(0, cvs.height-48, cvs.width, 48);
+          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.fillRect(0, cvs.height-52, cvs.width, 52);
           ctx.fillStyle = phColors[p] || '#fff';
-          ctx.font = 'bold 16px Inter,sans-serif';
+          ctx.font = 'bold 18px Inter,sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(phLabels[p] || '', cvs.width/2, cvs.height-18);
+          ctx.fillText(phLabels[p] || '', cvs.width/2, cvs.height-20);
         }
       } else {
-        // No person
-        ctx.fillStyle = 'rgba(239,68,68,0.12)';
-        ctx.fillRect(0,0,cvs.width,40);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0,0,cvs.width,cvs.height);
         ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 13px Inter,sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('⚠  No person detected — step into frame', 12, 26);
+        ctx.font = 'bold 16px Inter,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚠  Position your body in frame', cvs.width/2, cvs.height/2);
       }
     }
     animRef.current = requestAnimationFrame(loop);
   };
 
-  // ── Start ──────────────────────────────────────────────────────
+  // ── Start/Stop/Recal ──────────────────────────────────────────
   const handleStart = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -281,20 +321,20 @@ export default function BreathingSession() {
         calib:0, baseSh:0, baseAb:0,
         bufSh:Array(80).fill(0), bufAb:Array(80).fill(0),
         prev:0, dir:1, lastPeak:0, stamps:[],
-        good:0, tot:0, pFrame:0, lastVT:-1, phaseRef:'CALIBRATING',
+        good:0, tot:0, pFrame:0, lastVT:-1, phaseRef:'CALIBRATING', lastSpeak: 0
       });
       timerRef.current = setInterval(() => setElapsed(e=>e+1), 1000);
       animRef.current  = requestAnimationFrame(loop);
-    } catch { alert('Camera permission required. Please allow camera access.'); }
+    } catch { alert('Camera access denied. Please enable camera in settings.'); }
   };
 
-  // ── Stop ───────────────────────────────────────────────────────
   const handleStop = async () => {
     setRunning(false); setPhase('IDLE');
     if (timerRef.current) clearInterval(timerRef.current);
     cancelAnimationFrame(animRef.current);
     if (videoRef.current?.srcObject)
       (videoRef.current.srcObject as MediaStream).getTracks().forEach(t=>t.stop());
+    
     if (startRef.current) {
       try {
         await apiService.uploadSession({
@@ -311,15 +351,13 @@ export default function BreathingSession() {
           total_breaths: L.current.tot, good_breath_pct: tech, avg_bpm: bpm,
           exercise_type: 'diaphragmatic' }, ...h.slice(0,5)]);
       } catch (err: any) {
-        console.error('Failed to save session:', err);
-        alert(`❌ Failed to save session: ${err?.response?.data?.detail || err?.message || 'Unknown error'}`);
+        alert(`❌ Data sync failed: ${err?.message || 'Network error'}`);
       }
     }
   };
 
   const recal = () => { Object.assign(L.current,{calib:0,baseSh:0,baseAb:0}); setPhase('CALIBRATING'); };
 
-  // ── SVG signal helper ──────────────────────────────────────────
   const pts = (d: number[], h: number) =>
     d.map((v,i)=>`${(i/(d.length-1))*300},${h/2-v*2.2}`).join(' ');
 
@@ -328,68 +366,42 @@ export default function BreathingSession() {
   return (
     <div className="bs-shell">
       <div className="bs-layout">
-
-        {/* ═══ VIDEO COLUMN ════════════════════════════════════════ */}
         <div className="bs-video-col">
           <div className="bs-badge" style={{background:`${vc}20`,borderColor:`${vc}55`,color:vc}}>
             <span className="bs-dot" style={{background:vc}}/>{verdict}
           </div>
-
           <div className="bs-canvas-wrap">
-            {/* Hidden video — NOT display:none so dimensions work */}
-            <video ref={videoRef} playsInline muted
-              style={{position:'absolute',width:'1px',height:'1px',opacity:0,pointerEvents:'none'}}/>
+            <video ref={videoRef} playsInline muted style={{position:'absolute',width:'1px',height:'1px',opacity:0}}/>
             <canvas ref={canvasRef} className="bs-canvas"/>
-
             {!running && (
               <div className="bs-idle-overlay">
                 <div style={{fontSize:72,marginBottom:16}}>🫁</div>
-                <div className="bs-idle-title">Diaphragmatic Breathing Coach</div>
-                <div className="bs-idle-sub">
-                  Stand <strong>side-on</strong> to the camera so your full torso is visible.<br/>
-                  A 60-frame auto-calibration runs when you press Start.
-                </div>
-                <div className="bs-status-pill" style={{
-                  color: ready?'#10b981':initErr?'#ef4444':'#f59e0b',
-                  borderColor: ready?'#10b981':initErr?'#ef4444':'#f59e0b',
-                }}>
-                  {initErr ? `⛔ ${initErr}` : ready ? '✓ Model ready' : `⏳ ${status}`}
+                <div className="bs-idle-title">Smart Breathing Coach</div>
+                <div className="bs-idle-sub">Powered by MediaPipe AI</div>
+                <div className="bs-status-pill" style={{ color: ready?'#10b981':'#f59e0b', borderColor: ready?'#10b981':'#f59e0b' }}>
+                  {ready ? '✓ AI Engine Ready' : `⏳ ${status}`}
                 </div>
                 <div className="bs-idle-tips">
-                  <span>💡 Keep shoulders relaxed — belly does the work</span>
-                  <span>💡 Breathe through nose, out through pursed lips</span>
-                  <span>💡 Target: 12–16 breaths per minute</span>
+                  <span>💡 Side-on view works best</span>
+                  <span>💡 Keep your shoulders relaxed</span>
+                  <span>💡 Watch the belly-breathing guide</span>
                 </div>
               </div>
             )}
           </div>
-
-          <div className="bs-tips-bar">
-            <span>💡 Side-on posture recommended</span>
-            <span>·</span><span>💡 Auto-calibration on start</span>
-            <span>·</span><span>💡 Target 12–16 breaths/min</span>
-          </div>
         </div>
 
-        {/* ═══ PANEL ═══════════════════════════════════════════════ */}
         <div className="bs-panel">
-          {/* Timer */}
           <div className="bs-panel-top">
-            <div>
-              <div className="bs-timer-label">SESSION</div>
-              <div className="bs-timer-val">{fmt(elapsed)}</div>
-            </div>
-            <div className="bs-phase-chip" style={{background:`${pc}22`,color:pc,borderColor:`${pc}55`}}>
-              {phase}
-            </div>
+            <div><div className="bs-timer-label">SESSION</div><div className="bs-timer-val">{fmt(elapsed)}</div></div>
+            <div className="bs-phase-chip" style={{background:`${pc}22`,color:pc,borderColor:`${pc}55`}}>{phase}</div>
             <button className="bs-hist-btn" onClick={()=>setShowHist(v=>!v)}>📋 History</button>
           </div>
 
-          {/* 2×2 metrics */}
           <div className="bs-metrics">
             {[
-              {l:'BREATHS / MIN', v:bpm,          c:'#10b981'},
-              {l:'DEPTH SCORE',   v:depth,         c:'#3b82f6'},
+              {l:'RATE (BPM)',    v:bpm,          c:'#10b981'},
+              {l:'ABDOMINAL DEPTH', v:depth,       c:'#3b82f6'},
               {l:'GOOD BREATHS',  v:`${goodPct}%`, c:'#8b5cf6'},
               {l:'TOTAL BREATHS', v:total,          c:'#f59e0b'},
             ].map(m=>(
@@ -400,84 +412,47 @@ export default function BreathingSession() {
             ))}
           </div>
 
-          {/* Excursion bar */}
           <div className="bs-excursion-block">
-            <div className="bs-excursion-head">
-              <span>Abdominal Excursion</span>
-              <span style={{color:pc}}>{Math.round(excur)}%</span>
-            </div>
-            <div className="bs-excursion-track">
-              <div className="bs-excursion-fill" style={{width:`${excur}%`,background:pc}}/>
-            </div>
+            <div className="bs-excursion-head"><span>Belly Movement</span><span style={{color:pc}}>{Math.round(excur)}%</span></div>
+            <div className="bs-excursion-track"><div className="bs-excursion-fill" style={{width:`${excur}%`,background:pc}}/></div>
           </div>
 
-          {/* Technique ring */}
           <div className="bs-ring-wrap">
             <svg width="110" height="110" viewBox="0 0 110 110">
               <circle cx="55" cy="55" r="44" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="9"/>
-              <circle cx="55" cy="55" r="44" fill="none" stroke={pc} strokeWidth="9"
-                strokeLinecap="round"
-                strokeDasharray={`${tech*2.765} 276.5`}
-                strokeDashoffset="69.1"
-                style={{transition:'stroke-dasharray 0.6s ease'}}/>
+              <circle cx="55" cy="55" r="44" fill="none" stroke={pc} strokeWidth="9" strokeLinecap="round" strokeDasharray={`${tech*2.765} 276.5`} strokeDashoffset="69.1" style={{transition:'stroke-dasharray 0.6s ease'}}/>
             </svg>
-            <div className="bs-ring-inner">
-              <div style={{fontSize:22,fontWeight:800,color:pc,lineHeight:1}}>{tech}%</div>
-              <div style={{fontSize:9,color:'#8892a4',textTransform:'uppercase',letterSpacing:'0.08em'}}>Technique</div>
-            </div>
+            <div className="bs-ring-inner"><div style={{fontSize:22,fontWeight:800,color:pc}}>{tech}%</div><div style={{fontSize:9,color:'#8892a4'}}>TECHNIQUE</div></div>
           </div>
 
-          {/* Live signals */}
           <div className="bs-signal-card">
-            <div className="bs-signal-legend">
-              <span style={{color:'#38bdf8'}}>── Shoulder</span>
-              <span style={{color:'#10b981'}}>── Abdomen</span>
-            </div>
+            <div className="bs-signal-legend"><span style={{color:'#38bdf8'}}>Shoulder</span><span style={{color:'#10b981'}}>Abdomen</span></div>
             <svg width="100%" height="72" viewBox="0 0 300 72" preserveAspectRatio="none">
-              <line x1="0" y1="36" x2="300" y2="36" stroke="rgba(255,255,255,0.05)" strokeWidth="1"/>
-              <polyline points={pts(sigSh,72)} fill="none" stroke="#38bdf8" strokeWidth="1.5" strokeLinejoin="round" opacity="0.7"/>
-              <polyline points={pts(sigAb,72)} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinejoin="round"/>
+              <polyline points={pts(sigSh,72)} fill="none" stroke="#38bdf8" strokeWidth="1.5" opacity="0.6"/>
+              <polyline points={pts(sigAb,72)} fill="none" stroke="#10b981" strokeWidth="2.5"/>
             </svg>
           </div>
 
-          {/* Controls */}
           {!running ? (
-            <button className="bs-start-btn" onClick={handleStart} disabled={!ready||!!initErr}>
-              {initErr ? '⛔ Init failed' : ready ? '▶  Start Session' : `⏳  ${status}`}
-            </button>
+            <button className="bs-start-btn" onClick={handleStart} disabled={!ready}>▶  Start Coaching</button>
           ) : (
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              <button className="bs-stop-btn"  onClick={handleStop}>⏹  End &amp; Save</button>
-              <button className="bs-recal-btn" onClick={recal}>↺  Recalibrate</button>
+              <button className="bs-stop-btn"  onClick={handleStop}>⏹  Finish Session</button>
+              <button className="bs-recal-btn" onClick={recal}>↺  Reset Sensor</button>
             </div>
           )}
-
-          {saved && <div className="bs-saved-banner">✅  Session saved — visible to your care team</div>}
         </div>
       </div>
 
-      {/* History drawer */}
       {showHist && (
         <div className="bs-history">
-          <div className="bs-history-title">Recent Sessions</div>
-          {history.length === 0
-            ? <div style={{color:'#8892a4',fontSize:13}}>No sessions yet.</div>
-            : history.map((s,i)=>(
-              <div key={s.id??i} className="bs-history-row">
-                <div>
-                  <div style={{fontSize:13,fontWeight:600}}>
-                    {Math.round(s.good_breath_pct??0)}% technique · {s.total_breaths??0} breaths
-                  </div>
-                  <div style={{fontSize:11,color:'#8892a4',marginTop:2}}>
-                    {new Date(s.started_at).toLocaleString()} · {Math.round(s.avg_bpm??0)} bpm
-                  </div>
-                </div>
-                <div style={{fontSize:20,fontWeight:800,
-                  color:(s.good_breath_pct??0)>=75?'#10b981':(s.good_breath_pct??0)>=50?'#f59e0b':'#ef4444'}}>
-                  {Math.round(s.good_breath_pct??0)}%
-                </div>
-              </div>
-            ))}
+          <div className="bs-history-title">Previous Sessions</div>
+          {history.map((s,i)=>(
+            <div key={s.id??i} className="bs-history-row">
+              <div><div style={{fontSize:13,fontWeight:600}}>{Math.round(s.good_breath_pct)}% accuracy · {s.total_breaths} breaths</div><div style={{fontSize:11,color:'#8892a4'}}>{new Date(s.started_at).toLocaleString()}</div></div>
+              <div style={{fontSize:18,fontWeight:800,color:s.good_breath_pct>=75?'#10b981':'#f59e0b'}}>{Math.round(s.good_breath_pct)}%</div>
+            </div>
+          ))}
         </div>
       )}
     </div>
