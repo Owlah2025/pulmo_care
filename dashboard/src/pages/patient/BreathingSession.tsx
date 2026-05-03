@@ -66,8 +66,9 @@ export default function BreathingSession() {
       try {
         setStatus('Loading WASM…');
         // Use CDN for WASM and helper scripts to ensure availability in production
+        // MUST include /wasm suffix for the resolver to find the correct binaries
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
         );
         setStatus('Loading pose model…');
 
@@ -82,11 +83,15 @@ export default function BreathingSession() {
           });
 
         try        { poseRef.current = await tryLoad('GPU'); }
-        catch      { poseRef.current = await tryLoad('CPU'); }
+        catch (gpuErr) {
+          console.warn('GPU delegate failed, trying CPU:', gpuErr);
+          poseRef.current = await tryLoad('CPU'); 
+        }
 
         if (!dead) { setReady(true); setStatus('Ready'); }
       } catch (e: any) {
-        if (!dead) setInitErr(String(e?.message || e));
+        console.error('BreathingSession Init Error:', e);
+        if (!dead) setInitErr(e instanceof Error ? e.message : JSON.stringify(e) || 'Unknown Init Error');
       }
     })();
     return () => { dead = true; poseRef.current?.close(); };
