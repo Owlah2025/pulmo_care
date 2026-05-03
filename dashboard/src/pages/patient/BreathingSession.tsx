@@ -272,7 +272,7 @@ export default function BreathingSession() {
     cancelAnimationFrame(animRef.current);
     if (videoRef.current?.srcObject)
       (videoRef.current.srcObject as MediaStream).getTracks().forEach(t=>t.stop());
-    if (startRef.current && elapsed > 10) {
+    if (startRef.current) {
       try {
         await apiService.uploadSession({
           patient_id: patientId,
@@ -287,7 +287,10 @@ export default function BreathingSession() {
         setHistory(h => [{ id: Date.now(), started_at: startRef.current!.toISOString(),
           total_breaths: L.current.tot, good_breath_pct: tech, avg_bpm: bpm,
           exercise_type: 'diaphragmatic' }, ...h.slice(0,5)]);
-      } catch { /* non-fatal */ }
+      } catch (err: any) {
+        console.error('Failed to save session:', err);
+        alert(`❌ Failed to save session: ${err?.response?.data?.detail || err?.message || 'Unknown error'}`);
+      }
     }
   };
 
